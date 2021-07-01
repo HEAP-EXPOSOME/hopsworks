@@ -109,4 +109,91 @@ We’re the best in what we do and want our community to succeed as well.
 Our many thanks to the top contributors of Hopsworks!
 
 
-Enjoy!
+```sh
+   cd hopsworks/hopsworks-IT/src/test/ruby/
+   bundle install
+   rspec --format html --out ../target/test-report.html
+```
+To run a single test
+```sh
+   cd hopsworks/hopsworks-IT/src/test/ruby/
+   rspec ./spec/session_spec.rb:60
+```
+To skip tests that need to run inside a vm
+```sh
+   cd hopsworks/hopsworks-IT/src/test/ruby/
+   rspec --format html --out ../target/test-report.html --tag ~vm:true
+```
+When the test is done if `LAUNCH_BROWSER` is set to true in `.env`, it will open the test report in a browser.
+
+## HEAP
+1. Storage setup - install
+  * Create partitions on disks - `parted` is one posibility (https://www.thegeekdiary.com/how-to-create-a-partition-using-parted-command/)
+  ```
+  parted /dev/vdb
+  (parted) mklabel msdos 
+  (parted) mkpart
+  Partition type? primary/extended? primary 
+  File system type?  [ext2]? ext4
+  Start? 0
+  End? 1000G
+  Warning: The resulting partition is not properly aligned for best performance.
+  Ignore/Cancel? I
+  ```
+  * Format
+  ```
+   mkfs.ext4 /dev/vdb1
+  ```
+  * Mount
+  ```
+  mkdir /mnt/disk1
+  mount /dev/vdb1 /mnt/disk1
+  ```
+  * Append to /etc/fstab
+  ```
+  /dev/vdb1  /srv    ext4    defaults        0 0
+  ```
+  * Generic install setup
+  ```
+  sudo yum install -y java-1.8.0-openjdk
+  sudo yum install -y wget
+  ssh-keygen -t rsa -N "" -f ~/.ssh/id_rsa 
+  cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+  ```
+  * Add each of the nodes to the other's `/etc/hosts` file
+  * Karamel
+  ```
+  wget https://repo.hops.works/master/karamel-0.6.tgz
+  tar xzvf karamel-0.6.tgz
+  cd karamel-0.6
+  nohup ./bin/karamel --headless &
+  ```
+2. Install/Restart fix `/etc/hosts` - make hostname resolv to private ip instead of localhost
+3. when restarting a vm remember to
+  * update main node `/srv/hops/hadoop/etc/hadoop/yarn_exclude_nodes.xml`
+  * `su rmyarn` and `/srv/hops/hadoop/bin/yarn rmadmin -refreshNodes`
+  * update worker ip in main node `/etc/hosts` and `systemctl restart dnsmasq`
+  * shutdown all services
+  * update ip in `/etc/hosts` so it doesn't use localhost, but the private ip for resolving localhost
+  * update ip in `/etc/resolv.conf` - (might have to remove immutable flag - `chattr -i /etc/resolv.conf`)
+  * update ip in `/etc/systemd/system/multi-user.target.wants/consul.service`
+  * update ip in `/etc/dnsmasq.d/default`
+  * update ip in `/srv/hops/kagent/etc/config.ini`
+  * `systemctl restart dnsmasq`
+  * `systemctl daemon-reload`
+  * restart all services
+4. decomission yarn nodes
+  * add node to `/srv/hops/hadoop/etc/hadoop/yarn_exclude_nodes.xml`
+  * `<host><name>heap-worker.novalocal</name></host>`
+  * as user `rmyarn` run: `/srv/hops/hadoop/bin/yarn rmadmin -refreshNodes`
+  * shutdown decomissioned node
+5. changing hostname
+  * add new host in the hopsworks.hosts table
+  * update hostname in `/srv/hops/consul/.bashrc`
+  * update host-id and hostname in `/srv/hops/kagent/etc/config.ini`
+  * update hosts in `/srv/hops/kagent/etc/state_store/crypto_material_state.json`
+  * save `/srv/hops/super_crypto` and then empty to regenerate certs
+  * export cert pass `export HOPSIFY_PASSWORD=`
+  * run hopsify for all users: `/srv/hops/kagent/host-certs/hopsify --config /srv/hops/kagent/etc/config.ini x509 --alt-url=https://192.168.1.21:8181/ --username consul`
+  * set acls for all users `setfacl -m u:consul:rx /srv/hops/super_crypto/consul`
+  * remove `data_dir` from consul before restarting it to avoid id clashes
